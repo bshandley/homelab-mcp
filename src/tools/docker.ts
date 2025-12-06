@@ -43,10 +43,11 @@ export async function getContainerLogs(
 ): Promise<{ container: string; logs: string }> {
   const c = docker.getContainer(container);
 
-  const options: Docker.ContainerLogsOptions = {
+  const options: Docker.ContainerLogsOptions & { follow?: false } = {
     stdout: true,
     stderr: true,
     tail: Math.min(lines, 1000),
+    follow: false,
   };
 
   if (since) {
@@ -54,7 +55,7 @@ export async function getContainerLogs(
   }
 
   const logs = await c.logs(options);
-  const logString = logs.toString('utf-8');
+  const logString = (logs as Buffer).toString('utf-8');
 
   return {
     container,
