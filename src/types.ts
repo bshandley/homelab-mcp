@@ -1,22 +1,20 @@
 export interface Config {
   capabilityLevel: number;
   apiKey: string;
-  port: number;
-  opnsense: {
-    host: string;
-    apiKey: string;
-    apiSecret: string;
-  };
-  truenas: {
-    host: string;
-    apiKey: string;
-  };
-  docker: {
-    socketPath: string;
-  };
-  dockge: {
-    stacksPath: string;
-  };
+  port: number | null;
+
+  // Docker
+  dockerSocket: string;
+  dockgeStacksPath: string;
+
+  // OPNsense
+  opnsenseHost: string | null;
+  opnsenseApiKey: string | null;
+  opnsenseApiSecret: string | null;
+
+  // TrueNAS
+  truenasHost: string | null;
+  truenasApiKey: string | null;
 }
 
 export interface ContainerInfo {

@@ -95,7 +95,50 @@ Add to your Claude Desktop MCP settings:
 }
 ```
 
-For remote deployment via HTTPS, see the deployment section in the plan document.
+### Remote Access (Claude Chat)
+
+For accessing the MCP server from Claude Chat (web interface), deploy with HTTP transport:
+
+1. **Set environment variables in `.env`:**
+   ```env
+   PORT=3000
+   API_KEY=your-generated-key
+   CAPABILITY_LEVEL=1
+   ```
+
+2. **Deploy the container:**
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Configure reverse proxy** (e.g., Traefik, Pangolin, nginx) to route `mcp.handley.io` to `http://localhost:3000`
+
+4. **Add DNS record** pointing `mcp.handley.io` to your server
+
+5. **In Claude Chat**, add the MCP server:
+   - URL: `https://mcp.handley.io/mcp`
+   - Authentication: Bearer token
+   - Token: Your API_KEY value
+
+### Endpoints
+
+When running in HTTP mode:
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/health` | GET | No | Health check, returns status and capability level |
+| `/mcp` | POST | Yes | MCP protocol endpoint |
+| `/` | POST | Yes | Alias for /mcp |
+
+### Testing
+
+```bash
+# Test health endpoint
+curl https://mcp.handley.io/health
+
+# Test authentication
+curl -H "Authorization: Bearer YOUR_API_KEY" https://mcp.handley.io/mcp
+```
 
 ## Capability Levels
 

@@ -8,13 +8,13 @@ export function initOPNsense(cfg: Config): void {
 }
 
 async function opnsenseRequest(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
-  if (!config.opnsense.host || !config.opnsense.apiKey || !config.opnsense.apiSecret) {
+  if (!config.opnsenseHost || !config.opnsenseApiKey || !config.opnsenseApiSecret) {
     throw new Error('OPNsense is not configured');
   }
 
-  const auth = Buffer.from(`${config.opnsense.apiKey}:${config.opnsense.apiSecret}`).toString('base64');
+  const auth = Buffer.from(`${config.opnsenseApiKey}:${config.opnsenseApiSecret}`).toString('base64');
 
-  const url = `https://${config.opnsense.host}/api${endpoint}`;
+  const url = `https://${config.opnsenseHost}/api${endpoint}`;
 
   return new Promise((resolve, reject) => {
     const options = {

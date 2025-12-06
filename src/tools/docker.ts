@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 let docker: Docker;
 
 export function initDocker(config: Config): void {
-  docker = new Docker({ socketPath: config.docker.socketPath });
+  docker = new Docker({ socketPath: config.dockerSocket });
 }
 
 // Level 1 - Monitor
@@ -155,7 +155,7 @@ export async function stopContainer(container: string, timeout: number = 10): Pr
 // Level 3 - Configure
 
 export async function readComposeFile(stack: string, config: Config): Promise<{ stack: string; compose: string }> {
-  const composePath = join(config.dockge.stacksPath, stack, 'compose.yaml');
+  const composePath = join(config.dockgeStacksPath, stack, 'compose.yaml');
 
   try {
     const compose = await fs.readFile(composePath, 'utf-8');
@@ -163,7 +163,7 @@ export async function readComposeFile(stack: string, config: Config): Promise<{ 
   } catch (error) {
     // Try docker-compose.yml as fallback
     try {
-      const composePathAlt = join(config.dockge.stacksPath, stack, 'docker-compose.yml');
+      const composePathAlt = join(config.dockgeStacksPath, stack, 'docker-compose.yml');
       const compose = await fs.readFile(composePathAlt, 'utf-8');
       return { stack, compose };
     } catch {
@@ -214,7 +214,7 @@ export async function writeComposeFile(
   config: Config
 ): Promise<OperationResult & { stack: string }> {
   try {
-    const stackDir = join(config.dockge.stacksPath, stack);
+    const stackDir = join(config.dockgeStacksPath, stack);
     const composePath = join(stackDir, 'compose.yaml');
 
     // Ensure directory exists
@@ -239,7 +239,7 @@ export async function writeComposeFile(
 
 export async function composeUp(stack: string, config: Config): Promise<OperationResult & { stack: string }> {
   try {
-    const stackDir = join(config.dockge.stacksPath, stack);
+    const stackDir = join(config.dockgeStacksPath, stack);
     const { stdout, stderr } = await execAsync('docker compose up -d', { cwd: stackDir });
 
     return {
@@ -262,7 +262,7 @@ export async function composeDown(
   config: Config
 ): Promise<OperationResult & { stack: string }> {
   try {
-    const stackDir = join(config.dockge.stacksPath, stack);
+    const stackDir = join(config.dockgeStacksPath, stack);
     const cmd = removeVolumes ? 'docker compose down -v' : 'docker compose down';
     const { stdout, stderr } = await execAsync(cmd, { cwd: stackDir });
 

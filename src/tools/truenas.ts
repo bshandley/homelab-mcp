@@ -8,17 +8,17 @@ export function initTrueNAS(cfg: Config): void {
 }
 
 async function truenasRequest(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
-  if (!config.truenas.host || !config.truenas.apiKey) {
+  if (!config.truenasHost || !config.truenasApiKey) {
     throw new Error('TrueNAS is not configured');
   }
 
-  const url = `https://${config.truenas.host}/api/v2.0${endpoint}`;
+  const url = `https://${config.truenasHost}/api/v2.0${endpoint}`;
 
   return new Promise((resolve, reject) => {
     const options = {
       method,
       headers: {
-        'Authorization': `Bearer ${config.truenas.apiKey}`,
+        'Authorization': `Bearer ${config.truenasApiKey}`,
         'Content-Type': 'application/json',
       },
       // Allow self-signed certificates
