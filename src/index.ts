@@ -150,6 +150,21 @@ async function main() {
         }));
         return;
       }
+      
+      // OAuth 2.0 Authorization Server Metadata (RFC 8414)
+      if (req.url === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
+        const baseUrl = `https://${req.headers.host || 'mcp.handley.io'}`;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          issuer: baseUrl,
+          token_endpoint: `${baseUrl}/oauth/token`,
+          token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+          grant_types_supported: ['client_credentials'],
+          response_types_supported: ['token'],
+          scopes_supported: ['mcp'],
+        }));
+        return;
+      } 
 
       // OAuth 2.0 Token Endpoint
       if (req.url === '/oauth/token' && req.method === 'POST') {
