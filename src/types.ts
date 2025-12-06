@@ -3,6 +3,10 @@ export interface Config {
   apiKey: string;
   port: number | null;
 
+  // OAuth 2.0
+  oauthClientId: string | null;
+  oauthClientSecret: string | null;
+
   // Docker
   dockerSocket: string;
   dockgeStacksPath: string;

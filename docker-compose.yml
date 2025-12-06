@@ -5,8 +5,10 @@ services:
     restart: unless-stopped
     environment:
       - CAPABILITY_LEVEL=${CAPABILITY_LEVEL:-1}
-      - API_KEY=${API_KEY}
-      - PORT=${PORT:-3000}
+      - API_KEY=${API_KEY:-}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}
+      - PORT=${PORT:-3005}
       - OPNSENSE_HOST=${OPNSENSE_HOST:-}
       - OPNSENSE_API_KEY=${OPNSENSE_API_KEY:-}
       - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET:-}
@@ -18,10 +20,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /opt/stacks:/opt/stacks:ro
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
- #   networks:
- #     - homelab
-
-#networks:
-#  homelab:
-#    external: true
+      - "${PORT:-3005}:${PORT:-3005}"
+networks: {}

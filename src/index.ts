@@ -12,6 +12,14 @@ import {
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { loadConfig, validateConfig } from './config.js';
 import { getToolsForLevel, getTool, initializeTools } from './tools/index.js';
+import {
+  validateClientCredentials,
+  validateAccessToken,
+  issueToken,
+  parseBasicAuth,
+  parseRequestBody,
+  parseFormUrlEncoded,
+} from './oauth.js';
 
 async function main() {
   console.error('[Server] Starting Homelab MCP Server...');
@@ -95,12 +103,17 @@ async function main() {
   if (useHttp) {
     // HTTP transport for remote access (Claude Chat)
     const port = config.port || 3000;
-    const apiKey = config.apiKey;
 
-    if (!apiKey) {
-      console.error('[Server] ERROR: API_KEY is required for HTTP transport');
+    // Check we have some form of authentication configured
+    const hasApiKey = !!config.apiKey;
+    const hasOAuth = !!(config.oauthClientId && config.oauthClientSecret);
+
+    if (!hasApiKey && !hasOAuth) {
+      console.error('[Server] ERROR: HTTP mode requires API_KEY or OAuth credentials');
       process.exit(1);
     }
+
+    console.error(`[Server] Auth modes: API_KEY=${hasApiKey}, OAuth=${hasOAuth}`);
 
     // Track active transports for cleanup
     const activeTransports = new Map<string, StreamableHTTPServerTransport>();
@@ -129,19 +142,129 @@ async function main() {
           status: 'ok',
           version: '1.0.0',
           capabilityLevel: config.capabilityLevel,
-          toolCount: availableTools.length
+          toolCount: availableTools.length,
+          authModes: {
+            apiKey: hasApiKey,
+            oauth: hasOAuth,
+          },
         }));
         return;
       }
 
-      // API key authentication for all other endpoints
-      const authHeader = req.headers.authorization;
-      const expectedAuth = `Bearer ${apiKey}`;
+      // OAuth 2.0 Token Endpoint
+      if (req.url === '/oauth/token' && req.method === 'POST') {
+        if (!hasOAuth) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'unsupported_grant_type',
+            error_description: 'OAuth is not configured on this server',
+          }));
+          return;
+        }
 
-      if (!authHeader || authHeader !== expectedAuth) {
-        console.error(`[Auth] Invalid or missing API key (${requestId})`);
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized', message: 'Invalid or missing API key' }));
+        try {
+          const body = await parseRequestBody(req);
+          const contentType = req.headers['content-type'] || '';
+
+          let grantType: string | undefined;
+          let clientId: string | undefined;
+          let clientSecret: string | undefined;
+
+          // Parse based on content type
+          if (contentType.includes('application/x-www-form-urlencoded')) {
+            const params = parseFormUrlEncoded(body);
+            grantType = params.grant_type;
+            clientId = params.client_id;
+            clientSecret = params.client_secret;
+          } else if (contentType.includes('application/json')) {
+            const json = JSON.parse(body);
+            grantType = json.grant_type;
+            clientId = json.client_id;
+            clientSecret = json.client_secret;
+          }
+
+          // Also check Authorization header for Basic auth
+          const authHeader = req.headers.authorization;
+          if (authHeader && authHeader.startsWith('Basic ')) {
+            const basicAuth = parseBasicAuth(authHeader);
+            if (basicAuth) {
+              clientId = clientId || basicAuth.clientId;
+              clientSecret = clientSecret || basicAuth.clientSecret;
+            }
+          }
+
+          // Validate grant type
+          if (grantType !== 'client_credentials') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'unsupported_grant_type',
+              error_description: 'Only client_credentials grant type is supported',
+            }));
+            return;
+          }
+
+          // Validate credentials
+          if (!clientId || !clientSecret) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'invalid_request',
+              error_description: 'Missing client_id or client_secret',
+            }));
+            return;
+          }
+
+          if (!validateClientCredentials(clientId, clientSecret, config)) {
+            console.error(`[OAuth] Invalid credentials for client_id: ${clientId}`);
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'invalid_client',
+              error_description: 'Invalid client credentials',
+            }));
+            return;
+          }
+
+          // Issue token
+          const tokenResponse = issueToken();
+          console.error(`[OAuth] Token issued for client_id: ${clientId}`);
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache',
+          });
+          res.end(JSON.stringify(tokenResponse));
+          return;
+
+        } catch (error) {
+          console.error('[OAuth] Token endpoint error:', error);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'server_error',
+            error_description: 'Internal server error',
+          }));
+          return;
+        }
+      }
+
+      // For all other endpoints, require authentication
+      const authHeader = req.headers.authorization;
+      let isAuthenticated = false;
+
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        isAuthenticated = validateAccessToken(token, config);
+      }
+
+      if (!isAuthenticated) {
+        console.error(`[Auth] Authentication failed (${requestId})`);
+        res.writeHead(401, {
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': 'Bearer realm="homelab-mcp"',
+        });
+        res.end(JSON.stringify({
+          error: 'unauthorized',
+          message: 'Invalid or missing access token',
+        }));
         return;
       }
 
@@ -204,8 +327,10 @@ async function main() {
 
     httpServer.listen(port, '0.0.0.0', () => {
       console.error(`[Server] HTTP server listening on http://0.0.0.0:${port}`);
-      console.error(`[Server] MCP endpoint: http://0.0.0.0:${port}/mcp`);
-      console.error(`[Server] Health check: http://0.0.0.0:${port}/health`);
+      console.error(`[Server] Endpoints:`);
+      console.error(`[Server]   - Health: http://0.0.0.0:${port}/health`);
+      console.error(`[Server]   - OAuth:  http://0.0.0.0:${port}/oauth/token`);
+      console.error(`[Server]   - MCP:    http://0.0.0.0:${port}/mcp`);
       console.error(`[Server] Capability level: ${config.capabilityLevel}`);
     });
 

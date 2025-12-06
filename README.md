@@ -120,6 +120,33 @@ For accessing the MCP server from Claude Chat (web interface), deploy with HTTP 
    - Authentication: Bearer token
    - Token: Your API_KEY value
 
+### OAuth 2.0 Authentication (for Claude Chat)
+
+Claude Chat requires OAuth 2.0 for custom connectors. This server supports the Client Credentials flow.
+
+1. **Generate OAuth credentials:**
+   ```bash
+   # Generate client ID
+   openssl rand -hex 32
+
+   # Generate client secret
+   openssl rand -hex 32
+   ```
+
+2. **Add to `.env`:**
+   ```env
+   OAUTH_CLIENT_ID=your-generated-client-id
+   OAUTH_CLIENT_SECRET=your-generated-client-secret
+   ```
+
+3. **In Claude Chat, add the connector:**
+   - Name: `Homelab`
+   - Remote MCP server URL: `https://mcp.handley.io/mcp`
+   - OAuth Client ID: Your generated client ID
+   - OAuth Client Secret: Your generated client secret
+
+The server will issue access tokens valid for 1 hour. Claude Chat handles token refresh automatically.
+
 ### Endpoints
 
 When running in HTTP mode:
@@ -127,6 +154,7 @@ When running in HTTP mode:
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/health` | GET | No | Health check, returns status and capability level |
+| `/oauth/token` | POST | No | OAuth 2.0 token endpoint |
 | `/mcp` | POST | Yes | MCP protocol endpoint |
 | `/` | POST | Yes | Alias for /mcp |
 
@@ -136,8 +164,16 @@ When running in HTTP mode:
 # Test health endpoint
 curl https://mcp.handley.io/health
 
-# Test authentication
-curl -H "Authorization: Bearer YOUR_API_KEY" https://mcp.handley.io/mcp
+# Get an access token
+curl -X POST https://mcp.handley.io/oauth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET"
+
+# Use the token
+curl https://mcp.handley.io/mcp \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 ## Capability Levels
