@@ -10,15 +10,19 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { URL } from 'url';
 import { loadConfig, validateConfig } from './config.js';
 import { getToolsForLevel, getTool, initializeTools } from './tools/index.js';
 import {
   validateClientCredentials,
+  validateClientId,
   validateAccessToken,
   issueToken,
   parseBasicAuth,
   parseRequestBody,
   parseFormUrlEncoded,
+  createAuthorizationCode,
+  validateAuthorizationCode,
 } from './oauth.js';
 
 async function main() {
@@ -135,8 +139,12 @@ async function main() {
         return;
       }
 
+      // Parse URL
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host}`);
+      const pathname = parsedUrl.pathname;
+
       // Health check endpoint (no auth required)
-      if (req.url === '/health' && req.method === 'GET') {
+      if (pathname === '/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           status: 'ok',
@@ -150,24 +158,111 @@ async function main() {
         }));
         return;
       }
-      
+
+      // Favicon - return 204 No Content
+      if (pathname === '/favicon.ico') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       // OAuth 2.0 Authorization Server Metadata (RFC 8414)
-      if (req.url === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
+      if (pathname === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
         const baseUrl = `https://${req.headers.host || 'mcp.handley.io'}`;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           issuer: baseUrl,
+          authorization_endpoint: `${baseUrl}/authorize`,
           token_endpoint: `${baseUrl}/oauth/token`,
           token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
-          grant_types_supported: ['client_credentials'],
-          response_types_supported: ['token'],
+          grant_types_supported: ['authorization_code', 'client_credentials'],
+          response_types_supported: ['code'],
+          code_challenge_methods_supported: ['S256', 'plain'],
           scopes_supported: ['mcp'],
         }));
         return;
-      } 
+      }
+
+      // OAuth 2.0 Authorization Endpoint (for Authorization Code flow)
+      if (pathname === '/authorize' && req.method === 'GET') {
+        if (!hasOAuth) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'OAuth not configured' }));
+          return;
+        }
+
+        const responseType = parsedUrl.searchParams.get('response_type');
+        const clientId = parsedUrl.searchParams.get('client_id');
+        const redirectUri = parsedUrl.searchParams.get('redirect_uri');
+        const codeChallenge = parsedUrl.searchParams.get('code_challenge');
+        const codeChallengeMethod = parsedUrl.searchParams.get('code_challenge_method') || 'plain';
+        const state = parsedUrl.searchParams.get('state');
+        const scope = parsedUrl.searchParams.get('scope');
+
+        console.error(`[OAuth] Authorization request: client_id=${clientId}, redirect_uri=${redirectUri}, scope=${scope}`);
+
+        // Validate required parameters
+        if (responseType !== 'code') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'unsupported_response_type',
+            error_description: 'Only code response type is supported',
+          }));
+          return;
+        }
+
+        if (!clientId || !validateClientId(clientId, config)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'invalid_client',
+            error_description: 'Invalid client_id',
+          }));
+          return;
+        }
+
+        if (!redirectUri) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'invalid_request',
+            error_description: 'redirect_uri is required',
+          }));
+          return;
+        }
+
+        if (!codeChallenge) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'invalid_request',
+            error_description: 'code_challenge is required (PKCE)',
+          }));
+          return;
+        }
+
+        // For a personal homelab, auto-approve the authorization
+        // In a multi-user scenario, you'd show a login/consent page here
+        const authCode = createAuthorizationCode(
+          clientId,
+          redirectUri,
+          codeChallenge,
+          codeChallengeMethod
+        );
+
+        // Build redirect URL with authorization code
+        const redirectUrl = new URL(redirectUri);
+        redirectUrl.searchParams.set('code', authCode);
+        if (state) {
+          redirectUrl.searchParams.set('state', state);
+        }
+
+        console.error(`[OAuth] Redirecting to: ${redirectUrl.toString()}`);
+
+        res.writeHead(302, { 'Location': redirectUrl.toString() });
+        res.end();
+        return;
+      }
 
       // OAuth 2.0 Token Endpoint
-      if (req.url === '/oauth/token' && req.method === 'POST') {
+      if (pathname === '/oauth/token' && req.method === 'POST') {
         if (!hasOAuth) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -184,6 +279,9 @@ async function main() {
           let grantType: string | undefined;
           let clientId: string | undefined;
           let clientSecret: string | undefined;
+          let code: string | undefined;
+          let codeVerifier: string | undefined;
+          let redirectUri: string | undefined;
 
           // Parse based on content type
           if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -191,11 +289,17 @@ async function main() {
             grantType = params.grant_type;
             clientId = params.client_id;
             clientSecret = params.client_secret;
+            code = params.code;
+            codeVerifier = params.code_verifier;
+            redirectUri = params.redirect_uri;
           } else if (contentType.includes('application/json')) {
             const json = JSON.parse(body);
             grantType = json.grant_type;
             clientId = json.client_id;
             clientSecret = json.client_secret;
+            code = json.code;
+            codeVerifier = json.code_verifier;
+            redirectUri = json.redirect_uri;
           }
 
           // Also check Authorization header for Basic auth
@@ -208,46 +312,83 @@ async function main() {
             }
           }
 
-          // Validate grant type
-          if (grantType !== 'client_credentials') {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              error: 'unsupported_grant_type',
-              error_description: 'Only client_credentials grant type is supported',
-            }));
+          console.error(`[OAuth] Token request: grant_type=${grantType}, client_id=${clientId}`);
+
+          // Handle Authorization Code grant
+          if (grantType === 'authorization_code') {
+            if (!code || !codeVerifier || !redirectUri || !clientId) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'invalid_request',
+                error_description: 'Missing code, code_verifier, redirect_uri, or client_id',
+              }));
+              return;
+            }
+
+            const validation = validateAuthorizationCode(code, clientId, redirectUri, codeVerifier);
+            if (!validation.valid) {
+              console.error(`[OAuth] Authorization code validation failed: ${validation.error}`);
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'invalid_grant',
+                error_description: validation.error,
+              }));
+              return;
+            }
+
+            // Issue token
+            const tokenResponse = issueToken();
+            console.error(`[OAuth] Token issued via authorization_code for client_id: ${clientId}`);
+
+            res.writeHead(200, {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store',
+              'Pragma': 'no-cache',
+            });
+            res.end(JSON.stringify(tokenResponse));
             return;
           }
 
-          // Validate credentials
-          if (!clientId || !clientSecret) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              error: 'invalid_request',
-              error_description: 'Missing client_id or client_secret',
-            }));
+          // Handle Client Credentials grant (for backward compatibility / testing)
+          if (grantType === 'client_credentials') {
+            if (!clientId || !clientSecret) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'invalid_request',
+                error_description: 'Missing client_id or client_secret',
+              }));
+              return;
+            }
+
+            if (!validateClientCredentials(clientId, clientSecret, config)) {
+              console.error(`[OAuth] Invalid credentials for client_id: ${clientId}`);
+              res.writeHead(401, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'invalid_client',
+                error_description: 'Invalid client credentials',
+              }));
+              return;
+            }
+
+            // Issue token
+            const tokenResponse = issueToken();
+            console.error(`[OAuth] Token issued via client_credentials for client_id: ${clientId}`);
+
+            res.writeHead(200, {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store',
+              'Pragma': 'no-cache',
+            });
+            res.end(JSON.stringify(tokenResponse));
             return;
           }
 
-          if (!validateClientCredentials(clientId, clientSecret, config)) {
-            console.error(`[OAuth] Invalid credentials for client_id: ${clientId}`);
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              error: 'invalid_client',
-              error_description: 'Invalid client credentials',
-            }));
-            return;
-          }
-
-          // Issue token
-          const tokenResponse = issueToken();
-          console.error(`[OAuth] Token issued for client_id: ${clientId}`);
-
-          res.writeHead(200, {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store',
-            'Pragma': 'no-cache',
-          });
-          res.end(JSON.stringify(tokenResponse));
+          // Unsupported grant type
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'unsupported_grant_type',
+            error_description: 'Supported grant types: authorization_code, client_credentials',
+          }));
           return;
 
         } catch (error) {
@@ -261,30 +402,42 @@ async function main() {
         }
       }
 
-      // For all other endpoints, require authentication
-      const authHeader = req.headers.authorization;
-      let isAuthenticated = false;
+      // MCP endpoint - handle discovery (GET) and protocol (POST)
+      if (pathname === '/mcp' || pathname === '/') {
+        // GET requests - return server info for discovery (no auth required)
+        if (req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            name: 'homelab-mcp',
+            version: '1.0.0',
+            protocol_version: '2024-11-05',
+            capabilities: { tools: {} },
+          }));
+          return;
+        }
 
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        isAuthenticated = validateAccessToken(token, config);
-      }
+        // POST requests require authentication
+        const authHeader = req.headers.authorization;
+        let isAuthenticated = false;
 
-      if (!isAuthenticated) {
-        console.error(`[Auth] Authentication failed (${requestId})`);
-        res.writeHead(401, {
-          'Content-Type': 'application/json',
-          'WWW-Authenticate': 'Bearer realm="homelab-mcp"',
-        });
-        res.end(JSON.stringify({
-          error: 'unauthorized',
-          message: 'Invalid or missing access token',
-        }));
-        return;
-      }
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          isAuthenticated = validateAccessToken(token, config);
+        }
 
-      // MCP endpoint
-      if (req.url === '/mcp' || req.url === '/') {
+        if (!isAuthenticated) {
+          console.error(`[Auth] Authentication failed (${requestId})`);
+          res.writeHead(401, {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Bearer realm="homelab-mcp"',
+          });
+          res.end(JSON.stringify({
+            error: 'unauthorized',
+            message: 'Invalid or missing access token',
+          }));
+          return;
+        }
+
         try {
           // Check for existing session
           const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -343,9 +496,11 @@ async function main() {
     httpServer.listen(port, '0.0.0.0', () => {
       console.error(`[Server] HTTP server listening on http://0.0.0.0:${port}`);
       console.error(`[Server] Endpoints:`);
-      console.error(`[Server]   - Health: http://0.0.0.0:${port}/health`);
-      console.error(`[Server]   - OAuth:  http://0.0.0.0:${port}/oauth/token`);
-      console.error(`[Server]   - MCP:    http://0.0.0.0:${port}/mcp`);
+      console.error(`[Server]   - Health:    http://0.0.0.0:${port}/health`);
+      console.error(`[Server]   - Discovery: http://0.0.0.0:${port}/.well-known/oauth-authorization-server`);
+      console.error(`[Server]   - Authorize: http://0.0.0.0:${port}/authorize`);
+      console.error(`[Server]   - Token:     http://0.0.0.0:${port}/oauth/token`);
+      console.error(`[Server]   - MCP:       http://0.0.0.0:${port}/mcp`);
       console.error(`[Server] Capability level: ${config.capabilityLevel}`);
     });
 

@@ -1,18 +1,35 @@
 import { Config } from './types.js';
-import { randomBytes, timingSafeEqual as cryptoTimingSafeEqual } from 'crypto';
+import { randomBytes, timingSafeEqual as cryptoTimingSafeEqual, createHash } from 'crypto';
 
 // Simple in-memory token store
 const activeTokens = new Map<string, { expiresAt: number }>();
 
+// Authorization code store (code -> { codeChallenge, clientId, redirectUri, expiresAt })
+const authorizationCodes = new Map<string, {
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  clientId: string;
+  redirectUri: string;
+  expiresAt: number;
+}>();
+
 // Token expiration time in seconds (1 hour)
 const TOKEN_EXPIRATION = 3600;
 
-// Clean up expired tokens periodically
+// Auth code expiration (10 minutes)
+const AUTH_CODE_EXPIRATION = 600;
+
+// Clean up expired tokens and codes periodically
 setInterval(() => {
   const now = Date.now();
   for (const [token, data] of activeTokens.entries()) {
     if (data.expiresAt < now) {
       activeTokens.delete(token);
+    }
+  }
+  for (const [code, data] of authorizationCodes.entries()) {
+    if (data.expiresAt < now) {
+      authorizationCodes.delete(code);
     }
   }
 }, 60000);
@@ -58,6 +75,17 @@ export function validateClientCredentials(
   }
 }
 
+export function validateClientId(clientId: string, config: Config): boolean {
+  if (!config.oauthClientId) {
+    return false;
+  }
+  try {
+    return timingSafeEqual(clientId, config.oauthClientId);
+  } catch {
+    return false;
+  }
+}
+
 export function issueToken(): TokenResponse {
   const token = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + (TOKEN_EXPIRATION * 1000);
@@ -92,6 +120,81 @@ export function validateAccessToken(token: string, config: Config): boolean {
   }
 
   return true;
+}
+
+// Authorization Code flow functions
+
+export function createAuthorizationCode(
+  clientId: string,
+  redirectUri: string,
+  codeChallenge: string,
+  codeChallengeMethod: string
+): string {
+  const code = randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + (AUTH_CODE_EXPIRATION * 1000);
+
+  authorizationCodes.set(code, {
+    codeChallenge,
+    codeChallengeMethod,
+    clientId,
+    redirectUri,
+    expiresAt,
+  });
+
+  console.error(`[OAuth] Created authorization code for client: ${clientId}`);
+  return code;
+}
+
+export function validateAuthorizationCode(
+  code: string,
+  clientId: string,
+  redirectUri: string,
+  codeVerifier: string
+): { valid: boolean; error?: string } {
+  const codeData = authorizationCodes.get(code);
+
+  if (!codeData) {
+    return { valid: false, error: 'Invalid authorization code' };
+  }
+
+  // Code can only be used once
+  authorizationCodes.delete(code);
+
+  if (codeData.expiresAt < Date.now()) {
+    return { valid: false, error: 'Authorization code expired' };
+  }
+
+  if (codeData.clientId !== clientId) {
+    return { valid: false, error: 'Client ID mismatch' };
+  }
+
+  if (codeData.redirectUri !== redirectUri) {
+    return { valid: false, error: 'Redirect URI mismatch' };
+  }
+
+  // Validate PKCE
+  if (!validatePKCE(codeVerifier, codeData.codeChallenge, codeData.codeChallengeMethod)) {
+    return { valid: false, error: 'Invalid code verifier' };
+  }
+
+  return { valid: true };
+}
+
+function validatePKCE(
+  codeVerifier: string,
+  codeChallenge: string,
+  codeChallengeMethod: string
+): boolean {
+  if (codeChallengeMethod === 'S256') {
+    // SHA256 hash of verifier, base64url encoded
+    const hash = createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    return hash === codeChallenge;
+  } else if (codeChallengeMethod === 'plain') {
+    return codeVerifier === codeChallenge;
+  }
+  return false;
 }
 
 export function parseBasicAuth(authHeader: string): { clientId: string; clientSecret: string } | null {
@@ -140,7 +243,7 @@ export function parseFormUrlEncoded(body: string): Record<string, string> {
   for (const pair of body.split('&')) {
     const [key, value] = pair.split('=');
     if (key && value !== undefined) {
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
+      params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' '));
     }
   }
 
