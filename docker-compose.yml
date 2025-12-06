@@ -6,7 +6,7 @@ services:
     environment:
       - CAPABILITY_LEVEL=${CAPABILITY_LEVEL:-1}
       - API_KEY=${API_KEY}
-      - PORT=3000
+      - PORT=3005
       - OPNSENSE_HOST=${OPNSENSE_HOST}
       - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
       - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
@@ -18,7 +18,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /opt/stacks:/opt/stacks:ro
     ports:
-      - "3000:3000"
+      - "3005:3005"
     networks:
       - homelab
 

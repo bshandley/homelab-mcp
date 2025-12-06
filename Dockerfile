@@ -18,6 +18,6 @@ COPY dist/ ./dist/
 # Note: User needs access to Docker socket, so we'll keep as root for now
 # In production, consider using Docker socket proxy with proper permissions
 
-EXPOSE 3000
+EXPOSE 3005
 
 CMD ["node", "dist/index.js"]

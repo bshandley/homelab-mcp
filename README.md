@@ -42,7 +42,7 @@ Edit `.env` with your settings:
 ```env
 CAPABILITY_LEVEL=1        # Start with level 1 (read-only)
 API_KEY=your-api-key-here # Use the generated key
-PORT=3000
+PORT=3005
 
 # OPNsense (optional)
 OPNSENSE_HOST=10.0.0.1

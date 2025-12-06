@@ -12,7 +12,7 @@ export function loadConfig(): Config {
     throw new Error('API_KEY is required');
   }
 
-  const port = parseInt(process.env.PORT || '3000', 10);
+  const port = parseInt(process.env.PORT || '3005', 10);
 
   return {
     capabilityLevel,
