@@ -122,6 +122,29 @@ async function main() {
     // Track active transports for cleanup
     const activeTransports = new Map<string, StreamableHTTPServerTransport>();
 
+    // Helper to get base URL
+    const getBaseUrl = (req: IncomingMessage) => {
+      const host = req.headers.host || 'mcp.handley.io';
+      return `https://${host}`;
+    };
+
+    // Helper to send 401 with proper MCP auth headers (RFC 9728)
+    const sendUnauthorized = (req: IncomingMessage, res: ServerResponse, requestId: string) => {
+      const baseUrl = getBaseUrl(req);
+      const resourceMetadataUrl = `${baseUrl}/.well-known/oauth-protected-resource`;
+      
+      console.error(`[Auth] Authentication required, returning 401 with resource_metadata (${requestId})`);
+      
+      res.writeHead(401, {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}"`,
+      });
+      res.end(JSON.stringify({
+        error: 'unauthorized',
+        message: 'Authentication required',
+      }));
+    };
+
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const requestId = Math.random().toString(36).substring(7);
       console.error(`[HTTP] ${req.method} ${req.url} (${requestId})`);
@@ -142,6 +165,7 @@ async function main() {
       // Parse URL
       const parsedUrl = new URL(req.url || '/', `http://${req.headers.host}`);
       const pathname = parsedUrl.pathname;
+      const baseUrl = getBaseUrl(req);
 
       // Health check endpoint (no auth required)
       if (pathname === '/health' && req.method === 'GET') {
@@ -166,24 +190,72 @@ async function main() {
         return;
       }
 
+      // OAuth 2.0 Protected Resource Metadata (RFC 9728) - Required by MCP spec
+      if (pathname === '/.well-known/oauth-protected-resource' && req.method === 'GET') {
+        console.error(`[OAuth] Serving protected resource metadata`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          resource: baseUrl,
+          authorization_servers: [baseUrl],
+          scopes_supported: ['mcp'],
+          bearer_methods_supported: ['header'],
+        }));
+        return;
+      }
+
       // OAuth 2.0 Authorization Server Metadata (RFC 8414)
       if (pathname === '/.well-known/oauth-authorization-server' && req.method === 'GET') {
-        const baseUrl = `https://${req.headers.host || 'mcp.handley.io'}`;
+        console.error(`[OAuth] Serving authorization server metadata`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           issuer: baseUrl,
           authorization_endpoint: `${baseUrl}/authorize`,
           token_endpoint: `${baseUrl}/oauth/token`,
-          token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
-          grant_types_supported: ['authorization_code', 'client_credentials'],
+          registration_endpoint: `${baseUrl}/oauth/register`,
           response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code'],
           code_challenge_methods_supported: ['S256', 'plain'],
+          token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
           scopes_supported: ['mcp'],
         }));
         return;
       }
 
-      // OAuth 2.0 Authorization Endpoint (for Authorization Code flow)
+      // OAuth 2.0 Dynamic Client Registration (RFC 7591)
+      if (pathname === '/oauth/register' && req.method === 'POST') {
+        if (!hasOAuth) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid_request', error_description: 'OAuth not configured' }));
+          return;
+        }
+
+        try {
+          const body = await parseRequestBody(req);
+          const registration = JSON.parse(body);
+          
+          console.error(`[OAuth] Client registration request:`, JSON.stringify(registration));
+          
+          // Return the pre-configured client credentials
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            client_id: config.oauthClientId,
+            client_secret: config.oauthClientSecret,
+            client_name: registration.client_name || 'MCP Client',
+            redirect_uris: registration.redirect_uris || [],
+            grant_types: ['authorization_code'],
+            response_types: ['code'],
+            token_endpoint_auth_method: 'none',
+          }));
+          return;
+        } catch (error) {
+          console.error('[OAuth] Registration error:', error);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid_request' }));
+          return;
+        }
+      }
+
+      // OAuth 2.0 Authorization Endpoint
       if (pathname === '/authorize' && req.method === 'GET') {
         if (!hasOAuth) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -211,11 +283,11 @@ async function main() {
           return;
         }
 
-        if (!clientId || !validateClientId(clientId, config)) {
+        if (!clientId) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
-            error: 'invalid_client',
-            error_description: 'Invalid client_id',
+            error: 'invalid_request',
+            error_description: 'client_id is required',
           }));
           return;
         }
@@ -238,8 +310,7 @@ async function main() {
           return;
         }
 
-        // For a personal homelab, auto-approve the authorization
-        // In a multi-user scenario, you'd show a login/consent page here
+        // Auto-approve for personal homelab
         const authCode = createAuthorizationCode(
           clientId,
           redirectUri,
@@ -312,11 +383,12 @@ async function main() {
             }
           }
 
-          console.error(`[OAuth] Token request: grant_type=${grantType}, client_id=${clientId}`);
+          console.error(`[OAuth] Token request: grant_type=${grantType}, client_id=${clientId}, code=${code ? 'present' : 'missing'}, code_verifier=${codeVerifier ? 'present' : 'missing'}`);
 
           // Handle Authorization Code grant
           if (grantType === 'authorization_code') {
             if (!code || !codeVerifier || !redirectUri || !clientId) {
+              console.error(`[OAuth] Missing params: code=${!!code}, codeVerifier=${!!codeVerifier}, redirectUri=${!!redirectUri}, clientId=${!!clientId}`);
               res.writeHead(400, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
                 error: 'invalid_request',
@@ -404,8 +476,24 @@ async function main() {
 
       // MCP endpoint - handle discovery (GET) and protocol (POST)
       if (pathname === '/mcp' || pathname === '/') {
-        // GET requests - return server info for discovery (no auth required)
+        // Check authentication for all MCP requests
+        const authHeader = req.headers.authorization;
+        let isAuthenticated = false;
+
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          isAuthenticated = validateAccessToken(token, config);
+        }
+
+        // If not authenticated, return 401 with resource_metadata (per MCP spec)
+        if (!isAuthenticated) {
+          sendUnauthorized(req, res, requestId);
+          return;
+        }
+
+        // Authenticated - handle the request
         if (req.method === 'GET') {
+          // GET requests return server info
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             name: 'homelab-mcp',
@@ -416,28 +504,7 @@ async function main() {
           return;
         }
 
-        // POST requests require authentication
-        const authHeader = req.headers.authorization;
-        let isAuthenticated = false;
-
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-          const token = authHeader.substring(7);
-          isAuthenticated = validateAccessToken(token, config);
-        }
-
-        if (!isAuthenticated) {
-          console.error(`[Auth] Authentication failed (${requestId})`);
-          res.writeHead(401, {
-            'Content-Type': 'application/json',
-            'WWW-Authenticate': 'Bearer realm="homelab-mcp"',
-          });
-          res.end(JSON.stringify({
-            error: 'unauthorized',
-            message: 'Invalid or missing access token',
-          }));
-          return;
-        }
-
+        // POST requests - MCP protocol
         try {
           // Check for existing session
           const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -496,11 +563,13 @@ async function main() {
     httpServer.listen(port, '0.0.0.0', () => {
       console.error(`[Server] HTTP server listening on http://0.0.0.0:${port}`);
       console.error(`[Server] Endpoints:`);
-      console.error(`[Server]   - Health:    http://0.0.0.0:${port}/health`);
-      console.error(`[Server]   - Discovery: http://0.0.0.0:${port}/.well-known/oauth-authorization-server`);
-      console.error(`[Server]   - Authorize: http://0.0.0.0:${port}/authorize`);
-      console.error(`[Server]   - Token:     http://0.0.0.0:${port}/oauth/token`);
-      console.error(`[Server]   - MCP:       http://0.0.0.0:${port}/mcp`);
+      console.error(`[Server]   - Health:     http://0.0.0.0:${port}/health`);
+      console.error(`[Server]   - Resource:   http://0.0.0.0:${port}/.well-known/oauth-protected-resource`);
+      console.error(`[Server]   - Auth Meta:  http://0.0.0.0:${port}/.well-known/oauth-authorization-server`);
+      console.error(`[Server]   - Register:   http://0.0.0.0:${port}/oauth/register`);
+      console.error(`[Server]   - Authorize:  http://0.0.0.0:${port}/authorize`);
+      console.error(`[Server]   - Token:      http://0.0.0.0:${port}/oauth/token`);
+      console.error(`[Server]   - MCP:        http://0.0.0.0:${port}/mcp`);
       console.error(`[Server] Capability level: ${config.capabilityLevel}`);
     });
 
