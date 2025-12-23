@@ -170,15 +170,15 @@ For production deployment:
 
 ```bash
 # Health check
-curl https://mcp.handley.io/health
+curl https://mcp.example.com/health
 
 # Get OAuth token (client credentials)
-curl -X POST https://mcp.handley.io/oauth/token \
+curl -X POST https://mcp.example.com/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=CLIENT_ID&client_secret=CLIENT_SECRET"
 
 # Call MCP endpoint
-curl https://mcp.handley.io/mcp \
+curl https://mcp.example.com/mcp \
   -H "Authorization: Bearer ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'

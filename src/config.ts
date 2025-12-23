@@ -5,6 +5,7 @@ export function loadConfig(): Config {
     capabilityLevel: parseInt(process.env.CAPABILITY_LEVEL || '1', 10),
     apiKey: process.env.API_KEY || '',
     port: process.env.PORT ? parseInt(process.env.PORT, 10) : null,
+    serverDomain: process.env.SERVER_DOMAIN || 'mcp.example.com',
 
     // OAuth 2.0
     oauthClientId: process.env.OAUTH_CLIENT_ID || null,

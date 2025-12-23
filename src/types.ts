@@ -2,6 +2,7 @@ export interface Config {
   capabilityLevel: number;
   apiKey: string;
   port: number | null;
+  serverDomain: string;
 
   // OAuth 2.0
   oauthClientId: string | null;

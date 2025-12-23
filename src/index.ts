@@ -124,7 +124,7 @@ async function main() {
 
     // Helper to get base URL
     const getBaseUrl = (req: IncomingMessage) => {
-      const host = req.headers.host || 'mcp.handley.io';
+      const host = req.headers.host || config.serverDomain;
       return `https://${host}`;
     };
 
