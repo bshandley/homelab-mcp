@@ -1,0 +1,27 @@
+services:
+  homelab-mcp:
+    build: .
+    container_name: homelab-mcp
+    restart: unless-stopped
+    environment:
+      - CAPABILITY_LEVEL=${CAPABILITY_LEVEL:-1}
+      - API_KEY=${API_KEY:-}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}
+      - PORT=${PORT:-3005}
+      - OPNSENSE_HOST=${OPNSENSE_HOST:-}
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY:-}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET:-}
+      - TRUENAS_HOST=${TRUENAS_HOST:-}
+      - TRUENAS_API_KEY=${TRUENAS_API_KEY:-}
+      - PROXMOX_HOST=${PROXMOX_HOST:-}
+      - PROXMOX_TOKEN_ID=${PROXMOX_TOKEN_ID:-}
+      - PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET:-}
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - DOCKGE_STACKS_PATH=/opt/stacks
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/stacks:/opt/stacks:ro
+    ports:
+      - "${PORT:-3005}:${PORT:-3005}"
+networks: {}
