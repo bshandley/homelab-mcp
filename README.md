@@ -1,6 +1,6 @@
 # Homelab MCP Server
 
-A remote MCP (Model Context Protocol) server for managing homelab infrastructure. Provides Claude with tools to monitor and manage Docker containers, OPNsense firewall, TrueNAS storage, and Proxmox virtualization.
+A remote MCP (Model Context Protocol) server for managing homelab infrastructure. Provides Claude with tools to monitor and manage Docker containers, OPNsense firewall, TrueNAS storage, Proxmox virtualization, and Home Assistant home automation.
 
 ## Features
 
@@ -9,6 +9,7 @@ A remote MCP (Model Context Protocol) server for managing homelab infrastructure
 - **OPNsense Integration**: Monitor firewall status and restart services
 - **TrueNAS Integration**: Check pool health, manage datasets, create snapshots
 - **Proxmox Integration**: Monitor and manage VMs/containers, create snapshots
+- **Home Assistant Integration**: Monitor and control lights, switches, sensors, automations
 - **System Monitoring**: CPU, memory, disk usage on the host
 
 ## ⚠️ DANGER - READ THIS FIRST
@@ -97,6 +98,12 @@ TRUENAS_API_KEY=your-key
 PROXMOX_HOST=10.0.0.2
 PROXMOX_TOKEN_ID=root@pam!mytoken
 PROXMOX_TOKEN_SECRET=your-secret
+
+# Home Assistant (optional)
+HOME_ASSISTANT_HOST=10.0.0.103
+HOME_ASSISTANT_PORT=8123
+HOME_ASSISTANT_TOKEN=your-long-lived-token
+HOME_ASSISTANT_USE_HTTPS=false
 ```
 
 ### 4. Build and Deploy
@@ -136,7 +143,11 @@ Add to your Claude Desktop MCP settings:
         "TRUENAS_API_KEY": "your-key",
         "PROXMOX_HOST": "10.0.0.2",
         "PROXMOX_TOKEN_ID": "root@pam!mytoken",
-        "PROXMOX_TOKEN_SECRET": "your-secret"
+        "PROXMOX_TOKEN_SECRET": "your-secret",
+        "HOME_ASSISTANT_HOST": "10.0.0.103",
+        "HOME_ASSISTANT_PORT": "8123",
+        "HOME_ASSISTANT_TOKEN": "your-long-lived-token",
+        "HOME_ASSISTANT_USE_HTTPS": "false"
       }
     }
   }
@@ -248,6 +259,10 @@ curl https://mcp.example.com/mcp \
 - `proxmox_status` - Get Proxmox cluster status
 - `proxmox_list_vms` - List all VMs and containers
 - `proxmox_vm_status` - Get VM/container status
+- `home_assistant_status` - Get Home Assistant version and entity counts
+- `home_assistant_list_entities` - List all entities (lights, switches, sensors)
+- `home_assistant_get_entity` - Get specific entity state and attributes
+- `home_assistant_list_services` - List available services
 
 ### Level 2 - Operate
 - `docker_restart_container` - Restart a container
@@ -258,6 +273,10 @@ curl https://mcp.example.com/mcp \
 - `proxmox_stop_vm` - Stop a VM/container
 - `proxmox_shutdown_vm` - Gracefully shutdown a VM/container
 - `proxmox_reboot_vm` - Reboot a VM/container
+- `home_assistant_call_service` - Call any Home Assistant service
+- `home_assistant_turn_on` - Turn on an entity
+- `home_assistant_turn_off` - Turn off an entity
+- `home_assistant_toggle` - Toggle an entity
 
 ### Level 3 - Configure
 - `docker_read_compose` - Read docker-compose.yml
@@ -269,6 +288,8 @@ curl https://mcp.example.com/mcp \
 - `proxmox_vm_config` - Get VM/container configuration
 - `proxmox_list_storage` - List Proxmox storage
 - `proxmox_list_nodes` - List cluster nodes
+- `home_assistant_get_config` - Get Home Assistant configuration
+- `home_assistant_error_log` - Get error log
 
 ### Level 4 - Manage
 - `docker_write_compose` - Write docker-compose.yml
@@ -278,6 +299,7 @@ curl https://mcp.example.com/mcp \
 - `truenas_create_snapshot` - Create ZFS snapshot
 - `proxmox_create_snapshot` - Create VM/container snapshot
 - `proxmox_delete_vm` - Delete a VM/container
+- `home_assistant_trigger_automation` - Trigger an automation
 
 ## Development
 
@@ -325,6 +347,9 @@ curl -k -u "key:secret" https://10.0.0.1/api/core/system/status
 
 # Test TrueNAS API
 curl -k -H "Authorization: Bearer YOUR_KEY" https://10.0.0.105/api/v2.0/system/info
+
+# Test Home Assistant API
+curl -H "Authorization: Bearer YOUR_TOKEN" http://10.0.0.103:8123/api/
 
 # Check network connectivity from container
 docker exec homelab-mcp ping 10.0.0.1
