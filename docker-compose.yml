@@ -24,4 +24,6 @@ services:
       - /opt/stacks:/opt/stacks:ro
     ports:
       - "${PORT:-3005}:${PORT:-3005}"
+    env_file:
+      - .env
 networks: {}
