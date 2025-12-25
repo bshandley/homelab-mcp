@@ -25,6 +25,12 @@ export interface Config {
   proxmoxHost: string | null;
   proxmoxTokenId: string | null;
   proxmoxTokenSecret: string | null;
+
+  // Home Assistant
+  homeAssistantHost: string | null;
+  homeAssistantPort: number;
+  homeAssistantToken: string | null;
+  homeAssistantUseHttps: boolean;
 }
 
 export interface ContainerInfo {
@@ -166,4 +172,25 @@ export interface ExecResult {
   exit_code: number;
   stdout: string;
   stderr: string;
+}
+
+export interface HomeAssistantStatus {
+  version: string;
+  location: string;
+  entities_count: number;
+  automations_count: number;
+  domains: string[];
+}
+
+export interface HomeAssistantEntity {
+  entity_id: string;
+  state: string;
+  friendly_name: string;
+  last_updated: string;
+  attributes: Record<string, any>;
+}
+
+export interface HomeAssistantService {
+  domain: string;
+  services: string[];
 }

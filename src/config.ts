@@ -24,6 +24,11 @@ export function loadConfig(): Config {
     proxmoxHost: process.env.PROXMOX_HOST || null,
     proxmoxTokenId: process.env.PROXMOX_TOKEN_ID || null,
     proxmoxTokenSecret: process.env.PROXMOX_TOKEN_SECRET || null,
+
+    homeAssistantHost: process.env.HOME_ASSISTANT_HOST || null,
+    homeAssistantPort: parseInt(process.env.HOME_ASSISTANT_PORT || '8123', 10),
+    homeAssistantToken: process.env.HOME_ASSISTANT_TOKEN || null,
+    homeAssistantUseHttps: process.env.HOME_ASSISTANT_USE_HTTPS === 'true',
   };
 }
 

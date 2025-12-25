@@ -4,6 +4,7 @@ import * as system from './system.js';
 import * as opnsense from './opnsense.js';
 import * as truenas from './truenas.js';
 import * as proxmox from './proxmox.js';
+import * as homeAssistant from './homeassistant.js';
 
 export interface ToolDefinition {
   name: string;
@@ -153,6 +154,55 @@ const ALL_TOOLS: ToolDefinition[] = [
       required: ['node', 'vmid', 'type'],
     },
     handler: async (args) => proxmox.getProxmoxVMStatus(args.node, args.vmid, args.type),
+  },
+  {
+    name: 'home_assistant_status',
+    description: 'Get Home Assistant version, entity count, and available domains',
+    level: 1,
+    inputSchema: {
+      type: 'object',
+    },
+    handler: async () => homeAssistant.getHomeAssistantStatus(),
+  },
+  {
+    name: 'home_assistant_list_entities',
+    description: 'List all Home Assistant entities (lights, switches, sensors, etc.)',
+    level: 1,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          description: 'Optional: Filter by domain (e.g., "light", "switch", "sensor")',
+        },
+      },
+    },
+    handler: async (args) => homeAssistant.listHomeAssistantEntities(args.domain),
+  },
+  {
+    name: 'home_assistant_get_entity',
+    description: 'Get detailed state and attributes of a specific Home Assistant entity',
+    level: 1,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entity_id: {
+          type: 'string',
+          description: 'Entity ID (e.g., "light.living_room", "switch.bedroom")',
+        },
+      },
+      required: ['entity_id'],
+    },
+    handler: async (args) => homeAssistant.getHomeAssistantEntity(args.entity_id),
+  },
+  {
+    name: 'home_assistant_list_services',
+    description: 'List all available Home Assistant services by domain',
+    level: 1,
+    inputSchema: {
+      type: 'object',
+    },
+    handler: async () => homeAssistant.listHomeAssistantServices(),
   },
 
   // Level 2 - Operate
@@ -324,6 +374,82 @@ const ALL_TOOLS: ToolDefinition[] = [
     },
     handler: async (args) => proxmox.rebootProxmoxVM(args.node, args.vmid, args.type),
   },
+  {
+    name: 'home_assistant_call_service',
+    description: 'Call any Home Assistant service with custom parameters',
+    level: 2,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          description: 'Service domain (e.g., "light", "switch", "automation")',
+        },
+        service: {
+          type: 'string',
+          description: 'Service name (e.g., "turn_on", "turn_off", "toggle")',
+        },
+        entity_id: {
+          type: 'string',
+          description: 'Optional: Entity ID to target',
+        },
+        service_data: {
+          type: 'object',
+          description: 'Optional: Additional service data (e.g., brightness, color)',
+        },
+      },
+      required: ['domain', 'service'],
+    },
+    handler: async (args) => homeAssistant.callHomeAssistantService(args.domain, args.service, args.entity_id, args.service_data),
+  },
+  {
+    name: 'home_assistant_turn_on',
+    description: 'Turn on a Home Assistant entity (light, switch, etc.)',
+    level: 2,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entity_id: {
+          type: 'string',
+          description: 'Entity ID (e.g., "light.living_room")',
+        },
+      },
+      required: ['entity_id'],
+    },
+    handler: async (args) => homeAssistant.turnOnEntity(args.entity_id),
+  },
+  {
+    name: 'home_assistant_turn_off',
+    description: 'Turn off a Home Assistant entity (light, switch, etc.)',
+    level: 2,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entity_id: {
+          type: 'string',
+          description: 'Entity ID (e.g., "light.living_room")',
+        },
+      },
+      required: ['entity_id'],
+    },
+    handler: async (args) => homeAssistant.turnOffEntity(args.entity_id),
+  },
+  {
+    name: 'home_assistant_toggle',
+    description: 'Toggle a Home Assistant entity (light, switch, etc.)',
+    level: 2,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entity_id: {
+          type: 'string',
+          description: 'Entity ID (e.g., "light.living_room")',
+        },
+      },
+      required: ['entity_id'],
+    },
+    handler: async (args) => homeAssistant.toggleEntity(args.entity_id),
+  },
 
   // Level 3 - Configure
   {
@@ -449,6 +575,24 @@ const ALL_TOOLS: ToolDefinition[] = [
       type: 'object',
     },
     handler: async () => proxmox.listProxmoxNodes(),
+  },
+  {
+    name: 'home_assistant_get_config',
+    description: 'Get full Home Assistant configuration details',
+    level: 3,
+    inputSchema: {
+      type: 'object',
+    },
+    handler: async () => homeAssistant.getHomeAssistantConfig(),
+  },
+  {
+    name: 'home_assistant_error_log',
+    description: 'Get Home Assistant error log',
+    level: 3,
+    inputSchema: {
+      type: 'object',
+    },
+    handler: async () => homeAssistant.getHomeAssistantErrorLog(),
   },
 
   // Level 4 - Manage
@@ -609,6 +753,22 @@ const ALL_TOOLS: ToolDefinition[] = [
     },
     handler: async (args) => proxmox.deleteProxmoxVM(args.node, args.vmid, args.type),
   },
+  {
+    name: 'home_assistant_trigger_automation',
+    description: 'Trigger a Home Assistant automation',
+    level: 4,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        automation_id: {
+          type: 'string',
+          description: 'Automation entity ID (e.g., "automation.morning_routine")',
+        },
+      },
+      required: ['automation_id'],
+    },
+    handler: async (args) => homeAssistant.triggerAutomation(args.automation_id),
+  },
 ];
 
 export function getToolsForLevel(level: number): ToolDefinition[] {
@@ -624,4 +784,5 @@ export function initializeTools(config: Config): void {
   opnsense.initOPNsense(config);
   truenas.initTrueNAS(config);
   proxmox.initProxmox(config);
+  homeAssistant.initHomeAssistant(config);
 }
