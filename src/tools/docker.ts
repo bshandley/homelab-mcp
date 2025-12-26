@@ -19,7 +19,7 @@ export async function listContainers(all: boolean = true): Promise<{ containers:
   const containers = await docker.listContainers({ all });
 
   return {
-    containers: containers.map(c => ({
+    containers: (containers || []).map(c => ({
       id: c.Id.substring(0, 12),
       name: c.Names[0]?.replace(/^\//, '') || 'unknown',
       image: c.Image,
@@ -187,7 +187,7 @@ export async function listVolumes(): Promise<{ volumes: DockerVolume[] }> {
   const result = await docker.listVolumes();
 
   return {
-    volumes: result.Volumes.map(v => ({
+    volumes: (result.Volumes || []).map(v => ({
       name: v.Name,
       driver: v.Driver,
       mountpoint: v.Mountpoint,
@@ -199,7 +199,7 @@ export async function listNetworks(): Promise<{ networks: DockerNetwork[] }> {
   const networks = await docker.listNetworks();
 
   return {
-    networks: networks.map(n => ({
+    networks: (networks || []).map(n => ({
       name: n.Name,
       driver: n.Driver,
       scope: n.Scope,
