@@ -1,6 +1,6 @@
 # Homelab MCP Server
 
-A remote MCP (Model Context Protocol) server for managing homelab infrastructure. Provides Claude with tools to monitor and manage Docker containers, OPNsense firewall, TrueNAS storage, Proxmox virtualization, and Home Assistant home automation.
+A remote MCP (Model Context Protocol) server for managing homelab infrastructure. Provides Claude with tools to monitor and manage Docker containers, OPNsense firewall, TrueNAS storage, Proxmox virtualization, and Home Assistant service status.
 
 ## Features
 
@@ -9,7 +9,7 @@ A remote MCP (Model Context Protocol) server for managing homelab infrastructure
 - **OPNsense Integration**: Monitor firewall status and restart services
 - **TrueNAS Integration**: Check pool health, manage datasets, create snapshots
 - **Proxmox Integration**: Monitor and manage VMs/containers, create snapshots
-- **Home Assistant Integration**: Monitor and control lights, switches, sensors, automations
+- **Home Assistant Integration**: Monitor service health, entity states, configuration, and error logs
 - **System Monitoring**: CPU, memory, disk usage on the host
 
 ## ⚠️ DANGER - READ THIS FIRST
@@ -262,7 +262,6 @@ curl https://mcp.example.com/mcp \
 - `home_assistant_status` - Get Home Assistant version and entity counts
 - `home_assistant_list_entities` - List all entities (lights, switches, sensors)
 - `home_assistant_get_entity` - Get specific entity state and attributes
-- `home_assistant_list_services` - List available services
 
 ### Level 2 - Operate
 - `docker_restart_container` - Restart a container
@@ -273,10 +272,6 @@ curl https://mcp.example.com/mcp \
 - `proxmox_stop_vm` - Stop a VM/container
 - `proxmox_shutdown_vm` - Gracefully shutdown a VM/container
 - `proxmox_reboot_vm` - Reboot a VM/container
-- `home_assistant_call_service` - Call any Home Assistant service
-- `home_assistant_turn_on` - Turn on an entity
-- `home_assistant_turn_off` - Turn off an entity
-- `home_assistant_toggle` - Toggle an entity
 
 ### Level 3 - Configure
 - `docker_read_compose` - Read docker-compose.yml
@@ -299,7 +294,6 @@ curl https://mcp.example.com/mcp \
 - `truenas_create_snapshot` - Create ZFS snapshot
 - `proxmox_create_snapshot` - Create VM/container snapshot
 - `proxmox_delete_vm` - Delete a VM/container
-- `home_assistant_trigger_automation` - Trigger an automation
 
 ## Development
 

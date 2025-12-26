@@ -75,6 +75,7 @@ Tools are organized by category in separate files:
 - `src/tools/opnsense.ts` - OPNsense firewall integration (REST API)
 - `src/tools/truenas.ts` - TrueNAS storage management (REST API)
 - `src/tools/proxmox.ts` - Proxmox virtualization management (REST API)
+- `src/tools/homeassistant.ts` - Home Assistant service monitoring (REST API)
 
 Each category module must export an `init*()` function called during server startup to initialize connections.
 
