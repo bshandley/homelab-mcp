@@ -382,6 +382,22 @@ const ALL_TOOLS: ToolDefinition[] = [
     handler: async (args, config) => docker.readComposeFile(args.stack, config),
   },
   {
+    name: 'docker_read_env_file',
+    description: 'Read the .env file for a Dockge stack',
+    level: 3,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stack: {
+          type: 'string',
+          description: 'Stack name as shown in Dockge',
+        },
+      },
+      required: ['stack'],
+    },
+    handler: async (args, config) => docker.readEnvFile(args.stack, config),
+  },
+  {
     name: 'docker_list_volumes',
     description: 'List Docker volumes',
     level: 3,

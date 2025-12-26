@@ -172,6 +172,17 @@ export async function readComposeFile(stack: string, config: Config): Promise<{ 
   }
 }
 
+export async function readEnvFile(stack: string, config: Config): Promise<{ stack: string; env: string }> {
+  const envPath = join(config.dockgeStacksPath, stack, '.env');
+
+  try {
+    const env = await fs.readFile(envPath, 'utf-8');
+    return { stack, env };
+  } catch (error) {
+    throw new Error(`.env file not found for stack: ${stack}`);
+  }
+}
+
 export async function listVolumes(): Promise<{ volumes: DockerVolume[] }> {
   const result = await docker.listVolumes();
 
