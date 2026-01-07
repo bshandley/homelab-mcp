@@ -15,6 +15,40 @@ export function initDocker(config: Config): void {
   docker = new Docker({ socketPath: config.dockerSocket });
 }
 
+/**
+ * Converts relative time strings to Unix timestamps
+ * @param relativeTime - Time string like "30s", "10m", "1h", "2d"
+ * @returns Unix timestamp as a string
+ */
+function convertRelativeTimeToTimestamp(relativeTime: string): string {
+  const match = relativeTime.match(/^(\d+)([smhd])$/);
+  if (!match) {
+    throw new Error(`Invalid time format: ${relativeTime}. Use format like "30s", "10m", "1h", "2d"`);
+  }
+
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+
+  let seconds = 0;
+  switch (unit) {
+    case 's':
+      seconds = value;
+      break;
+    case 'm':
+      seconds = value * 60;
+      break;
+    case 'h':
+      seconds = value * 60 * 60;
+      break;
+    case 'd':
+      seconds = value * 60 * 60 * 24;
+      break;
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000) - seconds;
+  return timestamp.toString();
+}
+
 // Level 1 - Monitor
 
 export async function listContainers(all: boolean = true): Promise<{ containers: ContainerInfo[] }> {
@@ -65,7 +99,7 @@ export async function getContainerLogs(
   };
 
   if (since) {
-    options.since = since;
+    options.since = convertRelativeTimeToTimestamp(since);
   }
 
   const logs = await c.logs(options);
