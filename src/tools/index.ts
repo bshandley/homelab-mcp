@@ -49,16 +49,20 @@ const ALL_TOOLS: ToolDefinition[] = [
         },
         lines: {
           type: 'number',
-          description: 'Number of lines to return (default: 100, max: 1000)',
+          description: 'Number of lines to return (default: 50, max: 500)',
         },
         since: {
           type: 'string',
           description: 'Only logs since timestamp, e.g., "1h", "30m"',
         },
+        filter: {
+          type: 'string',
+          description: 'Regex pattern to filter log lines (e.g., "error|warn|fail")',
+        },
       },
       required: ['container'],
     },
-    handler: async (args) => docker.getContainerLogs(args.container, args.lines, args.since),
+    handler: async (args) => docker.getContainerLogs(args.container, args.lines, args.since, args.filter),
   },
   {
     name: 'docker_container_stats',

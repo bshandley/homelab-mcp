@@ -7,6 +7,8 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+const MAX_LOG_BYTES = 32000; // 32KB max to prevent context overflow
+
 let docker: Docker;
 
 export function initDocker(config: Config): void {
@@ -38,15 +40,27 @@ export async function listContainers(all: boolean = true): Promise<{ containers:
 
 export async function getContainerLogs(
   container: string,
-  lines: number = 100,
-  since?: string
-): Promise<{ container: string; logs: string }> {
+  lines: number = 50,
+  since?: string,
+  filter?: string
+): Promise<{
+  container: string;
+  logs: string;
+  metadata: {
+    lines_requested: number;
+    lines_returned: number;
+    truncated: boolean;
+    truncated_bytes?: number;
+    hint?: string;
+  }
+}> {
   const c = docker.getContainer(container);
 
+  const requestedLines = Math.min(lines, 500);
   const options: Docker.ContainerLogsOptions & { follow?: false } = {
     stdout: true,
     stderr: true,
-    tail: Math.min(lines, 1000),
+    tail: requestedLines,
     follow: false,
   };
 
@@ -55,11 +69,64 @@ export async function getContainerLogs(
   }
 
   const logs = await c.logs(options);
-  const logString = (logs as Buffer).toString('utf-8');
+  let logString = (logs as Buffer).toString('utf-8');
+
+  // Apply regex filter if provided
+  if (filter) {
+    try {
+      const regex = new RegExp(filter, 'i');
+      const lines = logString.split('\n');
+      logString = lines.filter(line => regex.test(line)).join('\n');
+    } catch (error) {
+      // Invalid regex, skip filtering
+    }
+  }
+
+  // Check if we need to truncate by bytes
+  let truncated = false;
+  let truncatedBytes = 0;
+  let actualLines = logString.split('\n').length;
+
+  if (logString.length > MAX_LOG_BYTES) {
+    truncated = true;
+    truncatedBytes = logString.length - MAX_LOG_BYTES;
+
+    // Keep the END of logs (most recent) by truncating from the start
+    logString = logString.slice(-MAX_LOG_BYTES);
+
+    // Find the first complete line after truncation
+    const firstNewline = logString.indexOf('\n');
+    if (firstNewline !== -1) {
+      logString = logString.slice(firstNewline + 1);
+    }
+
+    // Prepend truncation notice
+    logString = `... [truncated ${truncatedBytes} bytes from start] ...\n\n` + logString;
+
+    actualLines = logString.split('\n').length;
+  }
+
+  const metadata: {
+    lines_requested: number;
+    lines_returned: number;
+    truncated: boolean;
+    truncated_bytes?: number;
+    hint?: string;
+  } = {
+    lines_requested: lines,
+    lines_returned: actualLines,
+    truncated,
+  };
+
+  if (truncated) {
+    metadata.truncated_bytes = truncatedBytes;
+    metadata.hint = 'Output was truncated. Try using "since" parameter (e.g., "5m", "1h") or "filter" parameter (regex) to narrow results.';
+  }
 
   return {
     container,
     logs: logString,
+    metadata,
   };
 }
 
