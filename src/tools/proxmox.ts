@@ -14,13 +14,23 @@ async function proxmoxRequest(endpoint: string, method: string = 'GET', body?: a
 
   const url = `https://${config.proxmoxHost}:8006/api2/json${endpoint}`;
 
+  const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
+
   return new Promise((resolve, reject) => {
-    const options = {
+    const headers: Record<string, string> = {
+      'Authorization': `PVEAPIToken=${config.proxmoxTokenId}=${config.proxmoxTokenSecret}`,
+      'Content-Type': 'application/json',
+    };
+
+    // Proxmox's API rejects chunked transfer encoding (HTTP 501).
+    // Set Content-Length so Node.js sends a fixed-length body instead.
+    if (bodyStr !== undefined) {
+      headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+    }
+
+    const options: https.RequestOptions = {
       method,
-      headers: {
-        'Authorization': `PVEAPIToken=${config.proxmoxTokenId}=${config.proxmoxTokenSecret}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       // Allow self-signed certificates
       rejectUnauthorized: false,
     };
@@ -51,8 +61,8 @@ async function proxmoxRequest(endpoint: string, method: string = 'GET', body?: a
       reject(error);
     });
 
-    if (body) {
-      req.write(JSON.stringify(body));
+    if (bodyStr !== undefined) {
+      req.write(bodyStr);
     }
 
     req.end();
